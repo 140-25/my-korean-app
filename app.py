@@ -3,10 +3,8 @@ import openai
 import json
 import re
 
-# ページ設定
 st.set_page_config(page_title="韓国語・英語 AI 添削チャット", layout="centered")
 
-# サイドバー設定
 with st.sidebar:
     st.title("⚙️ 設定")
     api_key = st.text_input("OpenAI APIキー", type="password")
@@ -32,17 +30,9 @@ if st.button("添削する"):
             あなたは優秀な語学教師です。以下の入力を{lang}として添削してください。
             【厳守ルール】:
             1. スタイル: {style}（{style_instruction}）。
-            2. 回答構成:
-               - 「修正文：」から始める一行の修正結果。
-               - 日本語での解説。
-               - 最後に重要単語リストをJSON形式で出力。
-            3. 重要単語リスト詳細:
-               - word: 必ず「ハングル（韓国語文字）」で記述。
-               - pronunciation: 必ず「英文字（アルファベット/ローマ字）」で記述。カタカナは絶対に禁止。
-               - meaning: 日本語での意味。
-            
-            JSON形式例（この形式のみを出力）:
-            {{"words": [{{"word": "한글", "pronunciation": "hangeul", "meaning": "ハングル"}}]}}
+            2. 回答構成: 「修正文：」から始まる一行。次に日本語解説。最後にJSON単語リスト。
+            3. 単語リスト: word列はハングル、pronunciationはアルファベット、meaningは日本語。
+            JSON：{{"words": [{{"word": "...", "pronunciation": "...", "meaning": "..."}}]}}
             """
             
             response = openai.chat.completions.create(
@@ -52,13 +42,9 @@ if st.button("添削する"):
             
             full_text = response.choices[0].message.content
             
-            # JSON抽出ロジック（コードブロックや余計な文字を強力に除去）
             words_data = None
             explanation = full_text
-            
-            # ```json や ``` を除去
             clean_json_text = re.sub(r'```json|```', '', full_text).strip()
-            
             start_idx = clean_json_text.find('{')
             end_idx = clean_json_text.rfind('}')
             
@@ -70,7 +56,6 @@ if st.button("添削する"):
                 except:
                     pass
 
-            # 修正文の抽出
             fixed_sentence = ""
             for line in explanation.split('\n'):
                 if "修正文：" in line:
@@ -79,44 +64,47 @@ if st.button("添削する"):
             if not fixed_sentence: fixed_sentence = explanation.split('\n')[0]
             safe_sentence = fixed_sentence.replace('"', '\\"').replace("'", "\\'").replace("\n", " ")
 
-            # 表示
             st.subheader("AIの添削とアドバイス")
             st.write(explanation)
 
             st.divider()
             st.write("🌿 音声を選んで聴いてみよう！")
 
+            # スマホ対応版：再生のたびにインスタンスを生成し、確実に速度をセットするJS
             js_audio_html = f"""
                 <style>
                 .speed-btn {{
-                    padding: 12px 24px !important;
-                    margin-right: 10px !important;
+                    padding: 12px 20px !important;
+                    margin-right: 8px !important;
                     border-radius: 50px !important;
                     border: 2px solid #4CAF50 !important;
                     background-color: white !important;
                     color: #2E7D32 !important;
-                    font-size: 14px !important;
+                    font-size: 13px !important;
                     font-weight: bold !important;
                     cursor: pointer !important;
-                    transition: 0.3s !important;
                 }}
-                .speed-btn:hover {{ background-color: #e8f5e9 !important; }}
                 .speed-btn.active {{ background-color: #4CAF50 !important; color: white !important; }}
                 </style>
                 <div id="audio-ui">
-                    <button onclick="playWithSpeed(0.5, 'btn-05')" class="speed-btn" id="btn-05">0.5x 超スロー</button>
-                    <button onclick="playWithSpeed(0.8, 'btn-08')" class="speed-btn" id="btn-08">0.8x ゆっくり</button>
-                    <button onclick="playWithSpeed(1.0, 'btn-10')" class="speed-btn active" id="btn-10">1.0x 標準</button>
+                    <button onclick="playWithSpeed(0.5, 'btn-05')" class="speed-btn" id="btn-05">0.5x</button>
+                    <button onclick="playWithSpeed(0.8, 'btn-08')" class="speed-btn" id="btn-08">0.8x</button>
+                    <button onclick="playWithSpeed(1.0, 'btn-10')" class="speed-btn active" id="btn-10">1.0x</button>
                 </div>
                 <script>
                 function playWithSpeed(speed, btnId) {{
                     document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
                     document.getElementById(btnId).classList.add('active');
+                    
+                    // スマホ向けの対策：一度キャンセルしてから新しい設定で再生
                     window.speechSynthesis.cancel();
-                    const uttr = new SpeechSynthesisUtterance("{safe_sentence}");
-                    uttr.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
-                    uttr.rate = speed;
-                    window.speechSynthesis.speak(uttr);
+                    
+                    setTimeout(() => {{
+                        const msg = new SpeechSynthesisUtterance("{safe_sentence}");
+                        msg.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
+                        msg.rate = parseFloat(speed);
+                        window.speechSynthesis.speak(msg);
+                    }}, 50);
                 }}
                 </script>
             """

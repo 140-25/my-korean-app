@@ -25,36 +25,23 @@ if st.button("添削する"):
     else:
         with st.spinner("AIが添削しています..."):
             style_instruction = "敬語（저/습니다）" if style == "敬語（丁寧な表現）" else "タメ口（ナ/어/야）"
-            
-            prompt = f"""
-            あなたは優秀な語学教師です。以下の入力を{lang}として添削してください。
-            【厳守ルール】:
-            1. スタイル: {style}（{style_instruction}）。
-            2. 回答構成: 「修正文：」から始まる一行。次に日本語解説。最後にJSON単語リスト。
-            3. 単語リスト: word列はハングル、pronunciationはアルファベット、meaningは日本語。
-            JSON：{{"words": [{{"word": "...", "pronunciation": "...", "meaning": "..."}}]}}
-            """
+            prompt = f"""あなたは語学教師です。{lang}として添削して。構成：修正文（一行）、解説、JSON単語リスト。読みはアルファベット。"""
             
             response = openai.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[{"role": "system", "content": prompt}, {"role": "user", "content": user_input}]
             )
-            
             full_text = response.choices[0].message.content
-            
             words_data = None
-            explanation = full_text
             clean_json_text = re.sub(r'```json|```', '', full_text).strip()
             start_idx = clean_json_text.find('{')
             end_idx = clean_json_text.rfind('}')
-            
             if start_idx != -1 and end_idx != -1:
-                json_str = clean_json_text[start_idx:end_idx+1]
                 try:
-                    words_data = json.loads(json_str)
+                    words_data = json.loads(clean_json_text[start_idx:end_idx+1])
                     explanation = clean_json_text[:start_idx].strip()
-                except:
-                    pass
+                except: explanation = full_text
+            else: explanation = full_text
 
             fixed_sentence = ""
             for line in explanation.split('\n'):
@@ -68,43 +55,35 @@ if st.button("添削する"):
             st.write(explanation)
 
             st.divider()
-            st.write("🌿 音声を選んで聴いてみよう！")
+            st.write("🌿 音声再生（速度を選んでください）")
 
-            # スマホ対応版：再生のたびにインスタンスを生成し、確実に速度をセットするJS
+            # モバイルで確実に速度を反映させるための構造変更
             js_audio_html = f"""
                 <style>
-                .speed-btn {{
-                    padding: 12px 20px !important;
-                    margin-right: 8px !important;
-                    border-radius: 50px !important;
-                    border: 2px solid #4CAF50 !important;
-                    background-color: white !important;
-                    color: #2E7D32 !important;
-                    font-size: 13px !important;
-                    font-weight: bold !important;
-                    cursor: pointer !important;
-                }}
-                .speed-btn.active {{ background-color: #4CAF50 !important; color: white !important; }}
+                .speed-btn {{ padding: 12px 20px; margin-right: 8px; border-radius: 50px; border: 2px solid #4CAF50; background: white; color: #2E7D32; font-size: 14px; font-weight: bold; cursor: pointer; }}
+                .speed-btn.active {{ background: #4CAF50; color: white; }}
                 </style>
                 <div id="audio-ui">
-                    <button onclick="playWithSpeed(0.5, 'btn-05')" class="speed-btn" id="btn-05">0.5x</button>
-                    <button onclick="playWithSpeed(0.8, 'btn-08')" class="speed-btn" id="btn-08">0.8x</button>
-                    <button onclick="playWithSpeed(1.0, 'btn-10')" class="speed-btn active" id="btn-10">1.0x</button>
+                    <button onclick="changeSpeed(0.5, 'btn-05')" class="speed-btn" id="btn-05">0.5x</button>
+                    <button onclick="changeSpeed(0.8, 'btn-08')" class="speed-btn" id="btn-08">0.8x</button>
+                    <button onclick="changeSpeed(1.0, 'btn-10')" class="speed-btn active" id="btn-10">1.0x</button>
                 </div>
                 <script>
-                function playWithSpeed(speed, btnId) {{
+                var currentRate = 1.0;
+                function changeSpeed(speed, btnId) {{
+                    currentRate = parseFloat(speed);
                     document.querySelectorAll('.speed-btn').forEach(btn => btn.classList.remove('active'));
                     document.getElementById(btnId).classList.add('active');
-                    
-                    // スマホ向けの対策：一度キャンセルしてから新しい設定で再生
+                    playSpeech(); // 速度変更時に即再生
+                }}
+                function playSpeech() {{
                     window.speechSynthesis.cancel();
-                    
-                    setTimeout(() => {{
-                        const msg = new SpeechSynthesisUtterance("{safe_sentence}");
-                        msg.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
-                        msg.rate = parseFloat(speed);
-                        window.speechSynthesis.speak(msg);
-                    }}, 50);
+                    // iOS対策：発話オブジェクトを再生直前に都度生成し、明示的にプロパティを代入
+                    var msg = new SpeechSynthesisUtterance();
+                    msg.text = "{safe_sentence}";
+                    msg.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
+                    msg.rate = currentRate;
+                    window.speechSynthesis.speak(msg);
                 }}
                 </script>
             """

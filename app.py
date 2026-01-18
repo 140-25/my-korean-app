@@ -3,7 +3,6 @@ import openai
 import json
 import re
 import pandas as pd
-from io import BytesIO
 
 st.set_page_config(page_title="韓国語・英語 AI 添削チャット", layout="centered")
 
@@ -17,7 +16,7 @@ st.title("KRUS 韓国語・英語 AI 添削チャット")
 lang = st.selectbox("学習したい言語を選んでください", ["韓国語", "英語"])
 style = st.radio("添削スタイルを選んでください", ["敬語（丁寧な表現）", "タメ口（親しい表現）"], horizontal=True)
 
-user_input = st.text_area("添削したい文章を入力してください", placeholder="例: 안녕하세요. 私は日本人です。")
+user_input = st.text_area("添削したい文章を入力してください", placeholder="文章を入力...")
 
 if st.button("添削する"):
     if not api_key:
@@ -26,15 +25,20 @@ if st.button("添削する"):
         st.warning("文章を入力してください")
     else:
         with st.spinner("AIが添削しています..."):
-            style_instruction = "敬語（저/습니다）" if style == "敬語（丁寧な表現）" else "タメ口（ナ/어/야）"
+            # 言語に応じたプロンプトの切り替え
+            target_script = "ハングル" if lang == "韓国語" else "英語"
+            style_desc = "敬語（저/습니다）" if style == "敬語（丁寧な表現）" else "タメ口（ナ/어/야）"
             
             prompt = f"""
             あなたは優秀な語学教師です。以下の入力を{lang}として添削してください。
             【厳守ルール】:
-            1. スタイル: {style}（{style_instruction}）。
+            1. スタイル: {style}（{style_desc}）。
             2. 回答構成: 「修正文：」から始まる一行。次に日本語解説。最後にJSON単語リスト。
-            3. 単語リスト詳細: wordはハングル、pronunciationはアルファベット、meaningは日本語。
-            JSON：{{"words": [{{"word": "한글", "pronunciation": "hangeul", "meaning": "ハングル"}}]}}
+            3. 重要単語リスト: 
+               - word: 必ず「{target_script}（その言語の文字）」で記述。
+               - pronunciation: 必ず「アルファベット（ローマ字）」で記述。
+               - meaning: 日本語での意味。
+            JSON形式例：{{"words": [{{"word": "...", "pronunciation": "...", "meaning": "..."}}]}}
             """
             
             response = openai.chat.completions.create(
@@ -44,6 +48,7 @@ if st.button("添削する"):
             
             full_text = response.choices[0].message.content
             
+            # JSON抽出
             words_data = None
             explanation = full_text
             clean_text = re.sub(r'```json|```', '', full_text).strip()
@@ -55,8 +60,7 @@ if st.button("添削する"):
                     json_str = clean_text[start_idx:end_idx+1]
                     words_data = json.loads(json_str)
                     explanation = clean_text[:start_idx].strip()
-                except:
-                    pass
+                except: pass
 
             fixed_sentence = ""
             for line in explanation.split('\n'):
@@ -70,11 +74,13 @@ if st.button("添削する"):
             st.write(explanation)
 
             st.divider()
-            st.write("🌿 音声再生")
+            st.write(f"🌿 {lang}音声再生")
 
+            # スマホの音声エンジンを完全に初期化するJS
+            voice_lang = 'ko-KR' if lang == '韓国語' else 'en-US'
             js_audio_html = f"""
                 <style>
-                .speed-btn {{ padding: 12px 18px; margin-right: 5px; border-radius: 50px; border: 2px solid #4CAF50; background: white; color: #2E7D32; font-size: 14px; font-weight: bold; }}
+                .speed-btn {{ padding: 12px 18px; margin-right: 5px; border-radius: 50px; border: 2px solid #4CAF50; background: white; color: #2E7D32; font-size: 14px; font-weight: bold; cursor: pointer; }}
                 .active {{ background: #4CAF50 !important; color: white !important; }}
                 </style>
                 <div id="audio-ui">
@@ -86,11 +92,15 @@ if st.button("添削する"):
                 function playWithSpeed(rate, btnId) {{
                     document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
                     document.getElementById(btnId).classList.add('active');
+                    
                     window.speechSynthesis.cancel();
+                    
+                    // iOS/Android向け：再生直前に新規インスタンスを生成
                     setTimeout(() => {{
                         var utterance = new SpeechSynthesisUtterance("{safe_sentence}");
-                        utterance.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
+                        utterance.lang = "{voice_lang}";
                         utterance.rate = parseFloat(rate);
+                        utterance.pitch = 1.0;
                         window.speechSynthesis.speak(utterance);
                     }}, 100);
                 }}
@@ -100,15 +110,8 @@ if st.button("添削する"):
 
             if words_data and "words" in words_data:
                 st.divider()
-                st.subheader("📚 重要単語（単語帳）")
+                st.subheader(f"📚 重要単語（{lang}）")
                 df = pd.DataFrame(words_data["words"])
                 st.table(df)
-
-                # CSVダウンロード機能
                 csv = df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(
-                    label="📥 単語帳をCSVで保存",
-                    data=csv,
-                    file_name="korean_words.csv",
-                    mime="text/csv",
-                )
+                st.download_button(label="📥 CSVを保存", data=csv, file_name="words.csv", mime="text/csv")

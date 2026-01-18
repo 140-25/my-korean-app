@@ -2,6 +2,8 @@ import streamlit as st
 import openai
 import json
 import re
+import pandas as pd
+from io import BytesIO
 
 st.set_page_config(page_title="韓国語・英語 AI 添削チャット", layout="centered")
 
@@ -30,15 +32,9 @@ if st.button("添削する"):
             あなたは優秀な語学教師です。以下の入力を{lang}として添削してください。
             【厳守ルール】:
             1. スタイル: {style}（{style_instruction}）。
-            2. 回答構成:
-               - 「修正文：」から始める一行。
-               - 日本語での解説。
-               - 最後に重要単語リスト（JSON形式）。
-            3. 単語リスト詳細:
-               - word: 必ず「ハングル」
-               - pronunciation: 必ず「アルファベット（ローマ字）」
-               - meaning: 日本語での意味
-            JSON形式例：{{"words": [{{"word": "한글", "pronunciation": "hangeul", "meaning": "ハングル"}}]}}
+            2. 回答構成: 「修正文：」から始まる一行。次に日本語解説。最後にJSON単語リスト。
+            3. 単語リスト詳細: wordはハングル、pronunciationはアルファベット、meaningは日本語。
+            JSON：{{"words": [{{"word": "한글", "pronunciation": "hangeul", "meaning": "ハングル"}}]}}
             """
             
             response = openai.chat.completions.create(
@@ -48,7 +44,6 @@ if st.button("添削する"):
             
             full_text = response.choices[0].message.content
             
-            # JSON抽出ロジック（強化版）
             words_data = None
             explanation = full_text
             clean_text = re.sub(r'```json|```', '', full_text).strip()
@@ -75,22 +70,12 @@ if st.button("添削する"):
             st.write(explanation)
 
             st.divider()
-            st.write("🌿 音声再生（速度を選ぶと再生します）")
+            st.write("🌿 音声再生")
 
-            # スマホ対応：発話オブジェクトを完全にリセットしてから再生するJS
             js_audio_html = f"""
                 <style>
-                .speed-btn {{
-                    padding: 12px 18px !important;
-                    margin-right: 5px !important;
-                    border-radius: 50px !important;
-                    border: 2px solid #4CAF50 !important;
-                    background-color: white !important;
-                    color: #2E7D32 !important;
-                    font-size: 14px !important;
-                    font-weight: bold !important;
-                }}
-                .active {{ background-color: #4CAF50 !important; color: white !important; }}
+                .speed-btn {{ padding: 12px 18px; margin-right: 5px; border-radius: 50px; border: 2px solid #4CAF50; background: white; color: #2E7D32; font-size: 14px; font-weight: bold; }}
+                .active {{ background: #4CAF50 !important; color: white !important; }}
                 </style>
                 <div id="audio-ui">
                     <button onclick="playWithSpeed(0.5, 'btn-05')" class="speed-btn" id="btn-05">0.5x</button>
@@ -101,11 +86,7 @@ if st.button("添削する"):
                 function playWithSpeed(rate, btnId) {{
                     document.querySelectorAll('.speed-btn').forEach(b => b.classList.remove('active'));
                     document.getElementById(btnId).classList.add('active');
-                    
-                    // 音声リストを完全にクリア
                     window.speechSynthesis.cancel();
-                    
-                    // スマホSafari対策：わずかな遅延を置いてから新規作成
                     setTimeout(() => {{
                         var utterance = new SpeechSynthesisUtterance("{safe_sentence}");
                         utterance.lang = "{ 'ko-KR' if lang == '韓国語' else 'en-US' }";
@@ -120,4 +101,14 @@ if st.button("添削する"):
             if words_data and "words" in words_data:
                 st.divider()
                 st.subheader("📚 重要単語（単語帳）")
-                st.table(words_data["words"])
+                df = pd.DataFrame(words_data["words"])
+                st.table(df)
+
+                # CSVダウンロード機能
+                csv = df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(
+                    label="📥 単語帳をCSVで保存",
+                    data=csv,
+                    file_name="korean_words.csv",
+                    mime="text/csv",
+                )
